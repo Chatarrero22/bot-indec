@@ -42,8 +42,6 @@ Podés hacerlo arrastrando los archivos a la web de GitHub o usando git.
 
 | Name | Value |
 |------|-------|
-| `TELEGRAM_BOT_TOKEN` | `8138400157:AAHObBmjtLr0QrT2R66eRL8793NCtU2NqpE` |
-| `TELEGRAM_CHAT_ID` | `6779507640` |
 
 ### Paso 4: Activar GitHub Actions
 
