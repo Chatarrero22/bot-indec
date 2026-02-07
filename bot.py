@@ -176,6 +176,20 @@ def enviar_telegram(mensaje):
 # FUNCIONES DE RECORDATORIOS
 # ============================================================
 
+def obtener_proximas_publicaciones(cantidad=5):
+    """Obtiene las próximas N publicaciones"""
+    hoy = date.today()
+    proximas = []
+    
+    for (dia, mes, anio), publicaciones in CALENDARIO_INDEC.items():
+        fecha = date(anio, mes, dia)
+        if fecha >= hoy:
+            for emoji, indicador, periodo in publicaciones:
+                proximas.append((fecha, emoji, indicador, periodo))
+    
+    proximas.sort(key=lambda x: x[0])
+    return proximas[:cantidad]
+
 def verificar_publicaciones_hoy():
     """Verifica si hay publicaciones programadas para hoy"""
     hoy = date.today()
@@ -203,127 +217,6 @@ def verificar_publicaciones_hoy():
         return None
 
 # ============================================================
-# FUNCIONES DE DATOS
-# ============================================================
-
-def obtener_tipo_cambio():
-    """Tipo de cambio de DolarApi"""
-    try:
-        response = requests.get("https://dolarapi.com/v1/dolares/oficial", timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        return {
-            "venta": data.get("venta"),
-            "compra": data.get("compra"),
-            "fecha": data.get("fechaActualizacion", "")[:10]
-        }
-    except Exception as e:
-        print(f"   Error tipo cambio: {e}")
-        return None
-
-def obtener_ipc():
-    """IPC de ArgentinaDatos"""
-    try:
-        response = requests.get(
-            "https://api.argentinadatos.com/v1/finanzas/indices/inflacion",
-            timeout=30
-        )
-        if response.status_code == 200:
-            data = response.json()
-            if data and len(data) > 0:
-                ultimo = data[-1]
-                
-                # Calcular acumulado 12 meses
-                inflacion_12m = sum(d.get("valor", 0) for d in data[-12:])
-                
-                return {
-                    "fecha": ultimo.get("fecha", "")[:7],
-                    "valor": ultimo.get("valor"),
-                    "acumulado_12m": inflacion_12m
-                }
-    except Exception as e:
-        print(f"   Error IPC: {e}")
-    return None
-
-def obtener_emae():
-    """EMAE de datos.gob.ar"""
-    try:
-        response = requests.get(
-            "https://apis.datos.gob.ar/series/api/series/",
-            params={
-                "ids": "143.3_NO_PR_2004_A_31:percent_change_a_year_ago,143.3_NO_PR_2004_A_31:percent_change",
-                "last": 1,
-                "format": "json"
-            },
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("data") and len(data["data"]) > 0:
-                ultimo = data["data"][0]
-                return {
-                    "fecha": ultimo[0][:7] if ultimo[0] else "",
-                    "var_interanual": ultimo[1],
-                    "var_mensual": ultimo[2]
-                }
-    except Exception as e:
-        print(f"   Error EMAE: {e}")
-    return None
-
-def formatear_fecha(fecha_str):
-    """Formatea fecha YYYY-MM a Mes Año"""
-    if not fecha_str or len(fecha_str) < 7:
-        return fecha_str
-    meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-            "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    try:
-        anio, mes = fecha_str[:7].split("-")
-        return f"{meses[int(mes)-1]} {anio}"
-    except:
-        return fecha_str
-
-def formatear_variacion(valor):
-    """Formatea variación con signo"""
-    if valor is None:
-        return "N/D"
-    if abs(valor) < 0.05:
-        return "0.0%"
-    signo = "+" if valor > 0 else ""
-    return f"{signo}{valor:.1f}%"
-
-def generar_resumen_datos():
-    """Genera resumen de datos actuales"""
-    print("\n📊 Consultando datos actuales...")
-    
-    mensaje = "🇦🇷 <b>DATOS ECONÓMICOS ARGENTINA</b>\n\n"
-    
-    # Tipo de cambio
-    tc = obtener_tipo_cambio()
-    if tc and tc["venta"]:
-        mensaje += f"💵 <b>Tipo de Cambio Oficial</b>\n"
-        mensaje += f"   Venta: ${tc['venta']:.2f} | Compra: ${tc['compra']:.2f}\n\n"
-    
-    # IPC
-    ipc = obtener_ipc()
-    if ipc and ipc["valor"]:
-        mensaje += f"📊 <b>IPC (Inflación)</b> - {formatear_fecha(ipc['fecha'])}\n"
-        mensaje += f"   Mensual: {ipc['valor']:.1f}%\n"
-        if ipc.get("acumulado_12m"):
-            mensaje += f"   Acumulado 12 meses: {ipc['acumulado_12m']:.1f}%\n\n"
-    
-    # EMAE
-    emae = obtener_emae()
-    if emae:
-        mensaje += f"📈 <b>EMAE (Actividad)</b> - {formatear_fecha(emae['fecha'])}\n"
-        mensaje += f"   Var. interanual: {formatear_variacion(emae.get('var_interanual'))}\n"
-        mensaje += f"   Var. mensual: {formatear_variacion(emae.get('var_mensual'))}\n\n"
-    
-    mensaje += f"🕐 {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-    
-    return mensaje
-
-# ============================================================
 # MAIN
 # ============================================================
 
@@ -332,6 +225,8 @@ def main():
     print("🇦🇷 Bot Indicadores Económicos Argentina")
     print("=" * 50)
     
+    hoy = date.today()
+    
     # 1. Verificar si hay recordatorio para hoy
     recordatorio = verificar_publicaciones_hoy()
     
@@ -339,11 +234,22 @@ def main():
         # Si hay publicación hoy, enviar recordatorio
         enviar_telegram(recordatorio)
     else:
-        # Si no hay publicación, enviar resumen de datos (opcional)
-        # Descomentar la siguiente línea si querés recibir datos todos los días:
-        # resumen = generar_resumen_datos()
-        # enviar_telegram(resumen)
-        print("💤 No hay nada que enviar hoy")
+        # Si NO hay publicación hoy, enviar resumen de próximas fechas
+        proximas = obtener_proximas_publicaciones(5)
+        
+        mensaje = "🇦🇷 <b>BOT INDEC ACTIVO</b> ✅\n\n"
+        mensaje += f"📅 Hoy es {hoy.strftime('%d/%m/%Y')}\n"
+        mensaje += "No hay publicaciones INDEC programadas para hoy.\n\n"
+        mensaje += "<b>📋 Próximas publicaciones:</b>\n\n"
+        
+        for fecha, emoji, indicador, periodo in proximas:
+            dias_faltan = (fecha - hoy).days
+            mensaje += f"{emoji} <b>{indicador}</b>\n"
+            mensaje += f"    📆 {fecha.strftime('%d/%m/%Y')} (en {dias_faltan} días)\n\n"
+        
+        mensaje += f"🕐 {datetime.now().strftime('%H:%M')} hs"
+        
+        enviar_telegram(mensaje)
     
     print("=" * 50)
 
