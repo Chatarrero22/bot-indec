@@ -1,94 +1,257 @@
-# 🇦🇷 Bot Indicadores Económicos Argentina
+#!/usr/bin/env python3
+"""
+Bot de Telegram - Indicadores Económicos Argentina
+- Envía recordatorios el día que INDEC publica datos
+- Consulta datos actuales (IPC, EMAE, Tipo de Cambio)
 
-Bot de Telegram que envía recordatorios cuando INDEC publica datos económicos.
+Para usar con GitHub Actions
+"""
 
-## 📋 Indicadores incluidos
+import requests
+import json
+import os
+from datetime import datetime, date
+from pathlib import Path
 
-- 📊 IPC (Inflación)
-- 🧺 Canasta Básica Alimentaria y Total
-- 📈 EMAE (Actividad Económica)
-- 🛒 Supermercados
-- 🏪 Autoservicios Mayoristas
-- 🛍️ Centros de Compras
-- 💼 Índice de Salarios
-- 🏗️ Construcción (ISAC)
-- 🏭 Producción Industrial
-- 👥 Pobreza e Indigencia
+# ============================================================
+# CONFIGURACION (se lee de variables de entorno en GitHub)
+# ============================================================
 
-## ⚙️ Configuración
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-### Paso 1: Crear repositorio en GitHub
+# ============================================================
+# CALENDARIO INDEC - PRIMER SEMESTRE 2026
+# ============================================================
 
-1. Andá a [github.com](https://github.com) y logueate
-2. Click en **"New repository"** (o el botón + arriba a la derecha)
-3. Nombre: `bot-indec` (o el que quieras)
-4. Dejalo **público** o **privado** (como prefieras)
-5. Click en **"Create repository"**
+CALENDARIO_INDEC = {
+    # FEBRERO 2026
+    (10, 2, 2026): [
+        ("📊", "IPC (Inflación)", "Enero 2026"),
+        ("🧺", "Canasta Básica Alimentaria y Total", "Enero 2026"),
+    ],
+    (18, 2, 2026): [
+        ("🏭", "Utilización Capacidad Instalada Industria", "Diciembre 2025"),
+    ],
+    (19, 2, 2026): [
+        ("🏗️", "Indicadores Actividad Construcción (ISAC)", "Diciembre 2025"),
+        ("🏭", "Índice Producción Industrial Manufacturero", "Diciembre 2025"),
+    ],
+    (24, 2, 2026): [
+        ("📈", "EMAE (Actividad Económica)", "Diciembre 2025"),
+    ],
+    (25, 2, 2026): [
+        ("🛒", "Encuesta de Supermercados", "Diciembre 2025"),
+        ("🏪", "Encuesta Autoservicios Mayoristas", "Diciembre 2025"),
+        ("🛍️", "Encuesta Centros de Compras", "Diciembre 2025"),
+    ],
+    (26, 2, 2026): [
+        ("💼", "Índice de Salarios", "Diciembre 2025"),
+    ],
+    
+    # MARZO 2026
+    (12, 3, 2026): [
+        ("📊", "IPC (Inflación)", "Febrero 2026"),
+        ("🧺", "Canasta Básica Alimentaria y Total", "Febrero 2026"),
+    ],
+    (18, 3, 2026): [
+        ("🏭", "Utilización Capacidad Instalada Industria", "Enero 2026"),
+    ],
+    (19, 3, 2026): [
+        ("🏗️", "Indicadores Actividad Construcción (ISAC)", "Enero 2026"),
+        ("🏭", "Índice Producción Industrial Manufacturero", "Enero 2026"),
+    ],
+    (24, 3, 2026): [
+        ("📈", "EMAE (Actividad Económica)", "Enero 2026"),
+    ],
+    (25, 3, 2026): [
+        ("🛒", "Encuesta de Supermercados", "Enero 2026"),
+        ("🏪", "Encuesta Autoservicios Mayoristas", "Enero 2026"),
+        ("🛍️", "Encuesta Centros de Compras", "Enero 2026"),
+    ],
+    (26, 3, 2026): [
+        ("💼", "Índice de Salarios", "Enero 2026"),
+    ],
+    (31, 3, 2026): [
+        ("👥", "Pobreza e Indigencia", "Segundo Semestre 2025"),
+    ],
+    
+    # ABRIL 2026
+    (15, 4, 2026): [
+        ("📊", "IPC (Inflación)", "Marzo 2026"),
+        ("🧺", "Canasta Básica Alimentaria y Total", "Marzo 2026"),
+    ],
+    (21, 4, 2026): [
+        ("🏗️", "Indicadores Actividad Construcción (ISAC)", "Febrero 2026"),
+        ("🏭", "Índice Producción Industrial Manufacturero", "Febrero 2026"),
+    ],
+    (22, 4, 2026): [
+        ("📈", "EMAE (Actividad Económica)", "Febrero 2026"),
+    ],
+    (23, 4, 2026): [
+        ("🛒", "Encuesta de Supermercados", "Febrero 2026"),
+        ("🏪", "Encuesta Autoservicios Mayoristas", "Febrero 2026"),
+        ("🛍️", "Encuesta Centros de Compras", "Febrero 2026"),
+    ],
+    (28, 4, 2026): [
+        ("💼", "Índice de Salarios", "Febrero 2026"),
+    ],
+    
+    # MAYO 2026
+    (14, 5, 2026): [
+        ("📊", "IPC (Inflación)", "Abril 2026"),
+        ("🧺", "Canasta Básica Alimentaria y Total", "Abril 2026"),
+    ],
+    (20, 5, 2026): [
+        ("🏗️", "Indicadores Actividad Construcción (ISAC)", "Marzo 2026"),
+        ("🏭", "Índice Producción Industrial Manufacturero", "Marzo 2026"),
+    ],
+    (21, 5, 2026): [
+        ("📈", "EMAE (Actividad Económica)", "Marzo 2026"),
+    ],
+    (27, 5, 2026): [
+        ("🛒", "Encuesta de Supermercados", "Marzo 2026"),
+        ("🏪", "Encuesta Autoservicios Mayoristas", "Marzo 2026"),
+        ("🛍️", "Encuesta Centros de Compras", "Marzo 2026"),
+    ],
+    (28, 5, 2026): [
+        ("💼", "Índice de Salarios", "Marzo 2026"),
+    ],
+    
+    # JUNIO 2026
+    (11, 6, 2026): [
+        ("📊", "IPC (Inflación)", "Mayo 2026"),
+        ("🧺", "Canasta Básica Alimentaria y Total", "Mayo 2026"),
+    ],
+    (17, 6, 2026): [
+        ("🏗️", "Indicadores Actividad Construcción (ISAC)", "Abril 2026"),
+        ("🏭", "Índice Producción Industrial Manufacturero", "Abril 2026"),
+    ],
+    (23, 6, 2026): [
+        ("📈", "EMAE (Actividad Económica)", "Abril 2026"),
+    ],
+    (24, 6, 2026): [
+        ("🛒", "Encuesta de Supermercados", "Abril 2026"),
+        ("🏪", "Encuesta Autoservicios Mayoristas", "Abril 2026"),
+        ("🛍️", "Encuesta Centros de Compras", "Abril 2026"),
+    ],
+    (25, 6, 2026): [
+        ("💼", "Índice de Salarios", "Abril 2026"),
+    ],
+    (30, 6, 2026): [
+        ("👥", "Pobreza e Indigencia", "Primer Trimestre 2026"),
+    ],
+}
 
-### Paso 2: Subir los archivos
+# ============================================================
+# FUNCIONES TELEGRAM
+# ============================================================
 
-Subí estos 3 archivos a tu repositorio:
-- `bot.py`
-- `requirements.txt`
-- `.github/workflows/bot-diario.yml`
+def enviar_telegram(mensaje):
+    """Envía mensaje por Telegram"""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("❌ Error: Faltan TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID")
+        return False
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": mensaje,
+        "parse_mode": "HTML"
+    }
+    
+    try:
+        response = requests.post(url, json=payload, timeout=30)
+        if response.status_code == 200:
+            print("✅ Mensaje enviado por Telegram")
+            return True
+        else:
+            print(f"❌ Error Telegram: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        print(f"❌ Error Telegram: {e}")
+        return False
 
-Podés hacerlo arrastrando los archivos a la web de GitHub o usando git.
+# ============================================================
+# FUNCIONES DE RECORDATORIOS
+# ============================================================
 
-### Paso 3: Configurar los Secrets (MUY IMPORTANTE)
+def obtener_proximas_publicaciones(cantidad=5):
+    """Obtiene las próximas N publicaciones"""
+    hoy = date.today()
+    proximas = []
+    
+    for (dia, mes, anio), publicaciones in CALENDARIO_INDEC.items():
+        fecha = date(anio, mes, dia)
+        if fecha >= hoy:
+            for emoji, indicador, periodo in publicaciones:
+                proximas.append((fecha, emoji, indicador, periodo))
+    
+    proximas.sort(key=lambda x: x[0])
+    return proximas[:cantidad]
 
-1. En tu repositorio, andá a **Settings** → **Secrets and variables** → **Actions**
-2. Click en **"New repository secret"**
-3. Agregá estos 2 secrets:
+def verificar_publicaciones_hoy():
+    """Verifica si hay publicaciones programadas para hoy"""
+    hoy = date.today()
+    clave = (hoy.day, hoy.month, hoy.year)
+    
+    print(f"📅 Verificando publicaciones para {hoy.strftime('%d/%m/%Y')}...")
+    
+    if clave in CALENDARIO_INDEC:
+        publicaciones = CALENDARIO_INDEC[clave]
+        
+        mensaje = "🔔 <b>RECORDATORIO INDEC</b>\n\n"
+        mensaje += f"📅 Hoy <b>{hoy.strftime('%d/%m/%Y')}</b> se publica:\n\n"
+        
+        for emoji, indicador, periodo in publicaciones:
+            mensaje += f"{emoji} <b>{indicador}</b>\n"
+            mensaje += f"    📆 Período: {periodo}\n\n"
+        
+        mensaje += "⏰ Los datos se publican a las 16:00 hs\n"
+        mensaje += "🔗 https://www.indec.gob.ar"
+        
+        print(f"📢 Hay {len(publicaciones)} publicación(es) hoy")
+        return mensaje
+    else:
+        print("📭 No hay publicaciones programadas para hoy")
+        return None
 
-| Name | Value |
-|------|-------|
-| `TELEGRAM_BOT_TOKEN` | `8138400157:AAHObBmjtLr0QrT2R66eRL8793NCtU2NqpE` |
-| `TELEGRAM_CHAT_ID` | `6779507640` |
+# ============================================================
+# MAIN
+# ============================================================
 
-### Paso 4: Activar GitHub Actions
+def main():
+    print("=" * 50)
+    print("🇦🇷 Bot Indicadores Económicos Argentina")
+    print("=" * 50)
+    
+    hoy = date.today()
+    
+    # 1. Verificar si hay recordatorio para hoy
+    recordatorio = verificar_publicaciones_hoy()
+    
+    if recordatorio:
+        # Si hay publicación hoy, enviar recordatorio
+        enviar_telegram(recordatorio)
+    else:
+        # Si NO hay publicación hoy, enviar resumen de próximas fechas
+        proximas = obtener_proximas_publicaciones(5)
+        
+        mensaje = "🇦🇷 <b>BOT INDEC ACTIVO</b> ✅\n\n"
+        mensaje += f"📅 Hoy es {hoy.strftime('%d/%m/%Y')}\n"
+        mensaje += "No hay publicaciones INDEC programadas para hoy.\n\n"
+        mensaje += "<b>📋 Próximas publicaciones:</b>\n\n"
+        
+        for fecha, emoji, indicador, periodo in proximas:
+            dias_faltan = (fecha - hoy).days
+            mensaje += f"{emoji} <b>{indicador}</b>\n"
+            mensaje += f"    📆 {fecha.strftime('%d/%m/%Y')} (en {dias_faltan} días)\n\n"
+        
+        mensaje += f"🕐 {datetime.now().strftime('%H:%M')} hs"
+        
+        enviar_telegram(mensaje)
+    
+    print("=" * 50)
 
-1. Andá a la pestaña **Actions** en tu repositorio
-2. Si te pide habilitar workflows, hacé click en **"I understand my workflows, go ahead and enable them"**
-
-### Paso 5: Probar manualmente
-
-1. En **Actions**, seleccioná el workflow **"Bot INDEC Diario"**
-2. Click en **"Run workflow"** → **"Run workflow"**
-3. Esperá ~30 segundos y revisá tu Telegram
-
-## ⏰ Horario de ejecución
-
-El bot corre automáticamente todos los días a las **6:00 AM Argentina** (9:00 UTC).
-
-Solo te envía mensaje cuando hay una publicación INDEC programada para ese día.
-
-## 📱 Ejemplo de mensaje
-
-```
-🔔 RECORDATORIO INDEC
-
-📅 Hoy 10/02/2026 se publica:
-
-📊 IPC (Inflación)
-    📆 Período: Enero 2026
-
-🧺 Canasta Básica Alimentaria y Total
-    📆 Período: Enero 2026
-
-⏰ Los datos se publican a las 16:00 hs
-🔗 https://www.indec.gob.ar
-```
-
-## 📅 Calendario cargado
-
-Actualmente tiene cargado el calendario del **primer semestre 2026**.
-
-Para actualizar el calendario del segundo semestre, editá el diccionario `CALENDARIO_INDEC` en `bot.py`.
-
-## 🔧 Correr localmente (opcional)
-
-```bash
-export TELEGRAM_BOT_TOKEN="tu_token"
-export TELEGRAM_CHAT_ID="tu_chat_id"
-python bot.py
-```
+if __name__ == "__main__":
+    main()
