@@ -18,6 +18,9 @@ from datetime import datetime, date
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+# Cambiar a False cuando quieras que solo avise los días de publicación
+MODO_PRUEBA = True
+
 # ============================================================
 # CALENDARIO - SOLO LOS INDICADORES QUE SEGUIMOS
 # Formato: (dia, mes, año): [(emoji, indicador, periodo, url_datos)]
@@ -167,6 +170,20 @@ def buscar_dato(indicador):
     # Para otros indicadores, indicamos que hay que consultar INDEC
     return "⏳ Dato disponible a las 16:00 hs en INDEC"
 
+def obtener_proximas_publicaciones(cantidad=5):
+    """Obtiene las próximas N publicaciones"""
+    hoy = date.today()
+    proximas = []
+    
+    for (dia, mes, anio), publicaciones in CALENDARIO_INDEC.items():
+        fecha = date(anio, mes, dia)
+        if fecha >= hoy:
+            for emoji, indicador, periodo, url in publicaciones:
+                proximas.append((fecha, emoji, indicador, periodo))
+    
+    proximas.sort(key=lambda x: x[0])
+    return proximas[:cantidad]
+
 # ============================================================
 # FUNCIONES TELEGRAM
 # ============================================================
@@ -175,6 +192,8 @@ def enviar_telegram(mensaje):
     """Envía mensaje por Telegram"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("❌ Error: Faltan TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID")
+        print(f"   TOKEN: {'Configurado' if TELEGRAM_BOT_TOKEN else 'FALTA'}")
+        print(f"   CHAT_ID: {'Configurado' if TELEGRAM_CHAT_ID else 'FALTA'}")
         return False
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -204,14 +223,17 @@ def enviar_telegram(mensaje):
 def main():
     print("=" * 50)
     print("🇦🇷 Bot Indicadores Económicos Argentina")
+    print(f"🔧 Modo prueba: {'ACTIVADO' if MODO_PRUEBA else 'DESACTIVADO'}")
     print("=" * 50)
     
     hoy = date.today()
     clave = (hoy.day, hoy.month, hoy.year)
     
-    print(f"📅 Verificando publicaciones para {hoy.strftime('%d/%m/%Y')}...")
+    print(f"📅 Fecha actual: {hoy.strftime('%d/%m/%Y')}")
+    print(f"🔍 Buscando clave: {clave}")
     
     if clave in CALENDARIO_INDEC:
+        # Hay publicación hoy
         publicaciones = CALENDARIO_INDEC[clave]
         
         mensaje = "🔔 <b>NUEVO DATO INDEC</b>\n\n"
@@ -230,9 +252,30 @@ def main():
         
         print(f"📢 Hay {len(publicaciones)} publicación(es) hoy")
         enviar_telegram(mensaje)
+        
+    elif MODO_PRUEBA:
+        # Modo prueba: enviar mensaje aunque no haya publicaciones
+        print("🧪 MODO PRUEBA: Enviando mensaje de prueba...")
+        
+        proximas = obtener_proximas_publicaciones(5)
+        
+        mensaje = "🧪 <b>PRUEBA - BOT ACTIVO</b> ✅\n\n"
+        mensaje += f"📅 Hoy es {hoy.strftime('%d/%m/%Y')}\n"
+        mensaje += "No hay publicaciones INDEC hoy.\n\n"
+        mensaje += "<b>📋 Próximas publicaciones:</b>\n\n"
+        
+        for fecha, emoji, indicador, periodo in proximas:
+            dias_faltan = (fecha - hoy).days
+            mensaje += f"{emoji} <b>{indicador}</b>\n"
+            mensaje += f"    📆 {fecha.strftime('%d/%m/%Y')} (en {dias_faltan} días)\n\n"
+        
+        mensaje += f"🕐 {datetime.now().strftime('%H:%M')} hs\n"
+        mensaje += "\n<i>Para desactivar pruebas, cambiar MODO_PRUEBA = False</i>"
+        
+        enviar_telegram(mensaje)
     else:
-        print("📭 No hay publicaciones programadas para hoy de los indicadores que seguís")
-        print("   (IPC, ICC, EMAE, IPI Manufacturero, ISAC, Supermercados)")
+        print("📭 No hay publicaciones programadas para hoy")
+        print("   Indicadores que seguimos: IPC, ICC, EMAE, IPI, ISAC, Supermercados")
     
     print("=" * 50)
 
