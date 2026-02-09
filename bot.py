@@ -19,8 +19,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Cambiar a False cuando quieras que solo avise los días de publicación
-MODO_PRUEBA = True
-
+MODO_PRUEBA = False
 # ============================================================
 # CALENDARIO - SOLO LOS INDICADORES QUE SEGUIMOS
 # ============================================================
