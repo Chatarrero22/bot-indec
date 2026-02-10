@@ -2,7 +2,7 @@
 """
 Bot de Telegram - Indicadores Económicos Argentina
 Avisa cuando salen: IPC, ICC, EMAE, IPI Manufacturero, ISAC, Supermercados
-Intenta buscar el dato, si no lo encuentra manda el link igual
++ Recordatorio para actualizar PDF/Excel
 
 Para usar con GitHub Actions
 """
@@ -19,9 +19,10 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Cambiar a False cuando quieras que solo avise los días de publicación
-MODO_PRUEBA = False
+MODO_PRUEBA = True
+
 # ============================================================
-# CALENDARIO - SOLO LOS INDICADORES QUE SEGUIMOS
+# CALENDARIO - INDICADORES INDEC
 # ============================================================
 
 CALENDARIO_INDEC = {
@@ -113,7 +114,33 @@ CALENDARIO_INDEC = {
 }
 
 # ============================================================
-# FUNCIONES PARA OBTENER DATOS (opcional, si falla no pasa nada)
+# DÍAS PARA ACTUALIZAR PDF/EXCEL
+# (después de que salieron varios indicadores)
+# ============================================================
+
+DIAS_ACTUALIZAR_PDF = {
+    # FEBRERO 2026
+    (26, 2, 2026): "Ya salieron: IPC, ICC, EMAE, Supermercados de Enero/Diciembre",
+    
+    # MARZO 2026
+    (13, 3, 2026): "Ya salieron: IPI, ISAC, IPC de Enero/Febrero",
+    (27, 3, 2026): "Ya salieron: ICC, Supermercados, EMAE - Mes completo",
+    
+    # ABRIL 2026
+    (16, 4, 2026): "Ya salieron: IPI, ISAC, IPC, ICC de Febrero/Marzo",
+    (24, 4, 2026): "Ya salieron: EMAE, Supermercados - Mes completo",
+    
+    # MAYO 2026
+    (15, 5, 2026): "Ya salieron: IPI, ISAC, IPC de Marzo/Abril",
+    (23, 5, 2026): "Ya salieron: ICC, EMAE, Supermercados - Mes completo",
+    
+    # JUNIO 2026
+    (12, 6, 2026): "Ya salieron: IPI, ISAC, IPC de Abril/Mayo",
+    (30, 6, 2026): "Ya salieron: ICC, Supermercados, EMAE - Semestre completo",
+}
+
+# ============================================================
+# FUNCIONES PARA OBTENER DATOS (opcional)
 # ============================================================
 
 def intentar_obtener_dato(indicador):
@@ -205,8 +232,10 @@ def main():
     
     print(f"📅 Fecha: {hoy.strftime('%d/%m/%Y')}")
     
+    mensajes_enviados = 0
+    
+    # 1. Verificar si hay publicación INDEC hoy
     if clave in CALENDARIO_INDEC:
-        # HAY PUBLICACIÓN HOY
         publicaciones = CALENDARIO_INDEC[clave]
         
         mensaje = "🔔 <b>HOY SALE DATO INDEC</b>\n\n"
@@ -215,7 +244,6 @@ def main():
             mensaje += f"{emoji} <b>{indicador}</b>\n"
             mensaje += f"    📆 Período: {periodo}\n"
             
-            # Intentar buscar dato (si falla, no pasa nada)
             dato = intentar_obtener_dato(indicador)
             if dato:
                 mensaje += f"    📊 {dato}\n"
@@ -226,9 +254,23 @@ def main():
         
         print(f"📢 Publicaciones hoy: {len(publicaciones)}")
         enviar_telegram(mensaje)
+        mensajes_enviados += 1
+    
+    # 2. Verificar si es día de actualizar PDF
+    if clave in DIAS_ACTUALIZAR_PDF:
+        motivo = DIAS_ACTUALIZAR_PDF[clave]
         
-    elif MODO_PRUEBA:
-        # MODO PRUEBA - enviar resumen
+        mensaje = "📋 <b>RECORDATORIO: ACTUALIZAR PDF/EXCEL</b>\n\n"
+        mensaje += f"📅 {hoy.strftime('%d/%m/%Y')}\n\n"
+        mensaje += f"✅ {motivo}\n\n"
+        mensaje += "💡 Pedile a Claude que actualice el reporte con los nuevos datos."
+        
+        print(f"📋 Día de actualizar PDF")
+        enviar_telegram(mensaje)
+        mensajes_enviados += 1
+    
+    # 3. Modo prueba
+    if mensajes_enviados == 0 and MODO_PRUEBA:
         print("🧪 Modo prueba activado")
         
         proximas = obtener_proximas_publicaciones(5)
@@ -244,9 +286,9 @@ def main():
             mensaje += f"    📅 {fecha.strftime('%d/%m')} ({dias} días)\n\n"
         
         enviar_telegram(mensaje)
-        
-    else:
-        print("📭 No hay publicaciones hoy")
+    
+    elif mensajes_enviados == 0:
+        print("📭 No hay publicaciones ni recordatorios hoy")
     
     print("=" * 50)
 
