@@ -6,6 +6,10 @@ Avisa cuando salen:
 - UTDT: ICC (Confianza del Consumidor)
 + Recordatorio para actualizar PDF/Excel
 
+Corre 2 veces al día:
+- 10:00 AM: Aviso "HOY SALE"
+- 18:00 PM: "YA SALIÓ" + intenta traer dato
+
 Para usar con GitHub Actions
 """
 
@@ -22,6 +26,14 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Cambiar a False cuando quieras que solo avise los días de publicación
 MODO_PRUEBA = False
+
+# Hora Argentina (UTC-3). Si es >= 15 consideramos "tarde" (ya salió el dato)
+# El bot corre 10:00 (13 UTC) y 18:00 (21 UTC)
+def es_horario_tarde():
+    """Retorna True si es después de las 15:00 Argentina"""
+    utc_hour = datetime.utcnow().hour
+    # 21 UTC = 18:00 Argentina
+    return utc_hour >= 18
 
 # ============================================================
 # CALENDARIO - INDICADORES INDEC + UTDT
@@ -232,8 +244,10 @@ def main():
     
     hoy = date.today()
     clave = (hoy.day, hoy.month, hoy.year)
+    es_tarde = es_horario_tarde()
     
     print(f"📅 Fecha: {hoy.strftime('%d/%m/%Y')}")
+    print(f"🕐 Horario: {'TARDE (ya salió)' if es_tarde else 'MAÑANA (aviso)'}")
     
     mensajes_enviados = 0
     
@@ -241,7 +255,10 @@ def main():
     if clave in CALENDARIO:
         publicaciones = CALENDARIO[clave]
         
-        mensaje = "🔔 <b>HOY SALE DATO</b>\n\n"
+        if es_tarde:
+            mensaje = "✅ <b>YA SALIÓ</b>\n\n"
+        else:
+            mensaje = "🔔 <b>HOY SALE</b>\n\n"
         
         for item in publicaciones:
             emoji, indicador, periodo, url, fuente = item
@@ -250,27 +267,29 @@ def main():
             mensaje += f"    📆 Período: {periodo}\n"
             mensaje += f"    🏛️ Fuente: {fuente}\n"
             
-            # Intentar buscar dato (solo INDEC tiene APIs)
-            if fuente == "INDEC":
-                dato = intentar_obtener_dato(indicador)
-                if dato:
-                    mensaje += f"    📊 {dato}\n"
+            if es_tarde:
+                # Tarde: intentar traer el dato
+                if fuente == "INDEC":
+                    dato = intentar_obtener_dato(indicador)
+                    if dato:
+                        mensaje += f"    📊 {dato}\n"
+                    else:
+                        mensaje += f"    🔗 <a href='{url}'>Ver en {fuente}</a>\n"
                 else:
-                    mensaje += f"    ⏳ Dato disponible ~16:00 hs\n"
+                    mensaje += f"    🔗 <a href='{url}'>Ver en {fuente}</a>\n"
             else:
+                # Mañana: solo aviso
+                mensaje += f"    ⏰ Publicación: 16:00 hs\n"
                 mensaje += f"    🔗 <a href='{url}'>Ver en {fuente}</a>\n"
             
             mensaje += "\n"
-        
-        if any(item[4] == "INDEC" for item in publicaciones):
-            mensaje += "⏰ INDEC publica a las 16:00 hs"
         
         print(f"📢 Publicaciones hoy: {len(publicaciones)}")
         enviar_telegram(mensaje)
         mensajes_enviados += 1
     
-    # 2. Verificar si es día de actualizar PDF
-    if clave in DIAS_ACTUALIZAR_PDF:
+    # 2. Verificar si es día de actualizar PDF (solo mañana)
+    if clave in DIAS_ACTUALIZAR_PDF and not es_tarde:
         motivo = DIAS_ACTUALIZAR_PDF[clave]
         
         mensaje = "📋 <b>RECORDATORIO: ACTUALIZAR PDF/EXCEL</b>\n\n"
@@ -282,8 +301,8 @@ def main():
         enviar_telegram(mensaje)
         mensajes_enviados += 1
     
-    # 3. Modo prueba
-    if mensajes_enviados == 0 and MODO_PRUEBA:
+    # 3. Modo prueba (solo mañana para no duplicar)
+    if mensajes_enviados == 0 and MODO_PRUEBA and not es_tarde:
         print("🧪 Modo prueba activado")
         
         proximas = obtener_proximas_publicaciones(5)
